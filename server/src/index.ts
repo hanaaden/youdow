@@ -5,16 +5,15 @@ import cors from 'cors';
 import { spawn } from 'child_process';
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
 
-app.get('/', (req: Request, res: Response) => {
-    res.send('YouTube Downloader API is running 🚀');
-});
+// Path to local yt-dlp binary (IMPORTANT)
+const YTDLP_PATH = './yt-dlp';
 
-// validate URL
+// URL validator
 const isValidUrl = (url: string) => {
     try {
         new URL(url);
@@ -23,6 +22,10 @@ const isValidUrl = (url: string) => {
         return false;
     }
 };
+
+app.get('/', (req: Request, res: Response) => {
+    res.send('YouTube Downloader API is running 🚀');
+});
 
 //
 // =========================
@@ -39,11 +42,11 @@ app.get('/video-info', (req: Request, res: Response) => {
         });
     }
 
-    const yt = spawn('yt-dlp', [
+    const yt = spawn(YTDLP_PATH, [
         url,
         '--dump-single-json',
         '--no-warnings',
-        '--prefer-free-formats'
+        '--force-ipv4'
     ]);
 
     let output = '';
@@ -59,8 +62,6 @@ app.get('/video-info', (req: Request, res: Response) => {
 
     yt.on('close', (code) => {
         if (code !== 0) {
-            console.log('YT ERROR:', errorOutput);
-
             return res.status(500).json({
                 success: false,
                 message: errorOutput || 'yt-dlp failed',
@@ -77,7 +78,7 @@ app.get('/video-info', (req: Request, res: Response) => {
                 author: info.uploader,
                 duration: info.duration,
             });
-        } catch (err) {
+        } catch {
             return res.status(500).json({
                 success: false,
                 message: 'Failed to parse video info',
@@ -106,12 +107,13 @@ app.get('/download', (req: Request, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'video/mp4');
 
-    const yt = spawn('yt-dlp', [
+    const yt = spawn(YTDLP_PATH, [
         url,
         '-f',
         'bestvideo+bestaudio/best',
         '--merge-output-format',
         'mp4',
+        '--force-ipv4',
         '-o',
         '-'
     ]);
@@ -119,13 +121,11 @@ app.get('/download', (req: Request, res: Response) => {
     yt.stdout.pipe(res);
 
     yt.stderr.on('data', (data) => {
-        console.log('DOWNLOAD ERROR:', data.toString());
+        console.log('yt-dlp error:', data.toString());
     });
 
     yt.on('close', (code) => {
-        if (code !== 0) {
-            console.log('Download finished with code:', code);
-        }
+        console.log('Download finished with code:', code);
     });
 });
 
